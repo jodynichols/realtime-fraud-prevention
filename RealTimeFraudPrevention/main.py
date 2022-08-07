@@ -134,7 +134,7 @@ def create_table_input(table_name, stream_name, broker, api_username, api_passwo
                 'scan.startup.mode' = 'latest-offset',
                 'properties.security.protocol' = 'SASL_PLAINTEXT',
                 'properties.sasl.mechanism' = 'PLAIN',
-                'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="{3}" password="{4}";',
+                'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="{3}" password="{4}";'
             ) """.format(table_name, stream_name, broker, api_username, api_password)
 
 # Input outcome topic
@@ -171,7 +171,7 @@ def create_table_output_kafka(table_name, stream_name, broker, api_username, api
                 'json.timestamp-format.standard' = 'ISO-8601',
                 'properties.security.protocol' = 'SASL_PLAINTEXT',
                 'properties.sasl.mechanism' = 'PLAIN',
-                'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="{3}" password="{4}";',
+                'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="{3}" password="{4}";'
             ) """.format(table_name, stream_name, broker, api_username, api_password)
 
 
