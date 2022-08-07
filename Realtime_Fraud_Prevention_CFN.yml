@@ -9,10 +9,6 @@ Parameters:
     Type: String
     Description: S3 key for the zip file
     Default: lambda-functions.zip
-  S3connectorPath:
-    Type: String
-    Description: S3 key for the connector zip file
-    Default: confluentinc-kafka-connect-elasticsearch-11.1.6.zip
   YourEmail:
     Type: String
     Description: The email that will receive notifications. E.g awsblog@example.com 
@@ -44,6 +40,15 @@ Parameters:
     Type: String
     Description: Opensearch Master Password
     NoEcho: TRUE
+  MSKCluster:
+    Type: String
+    Description: Bootstrap Endpoint
+  APIKey:
+    Type: String
+    Description: CC API Key
+  APISecret:
+    Type: String
+    Description: CC API Secret
 
 # Resources
 Resources:
@@ -165,6 +170,14 @@ Resources:
       IpProtocol: tcp
       ToPort: 443
 
+#Lambda Secret
+  LambdaSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref BucketName
+      Description: "for realtime fraud demo"
+      SecretString: !Sub '{"username":"${APIKey}","password":"${APISecret}"}'
+
 # Lambda Role
   LambdaServiceExecutionRole:
     Type: AWS::IAM::Role
@@ -207,6 +220,7 @@ Resources:
                   - kafka:GetBootstrapBrokers
                   - kafka:CreateConfiguration
                   - kafka:DeleteConfiguration
+                  - secretsmanager:GetSecretValue
                 Resource: "*"
 
 # Config Lambda Role
@@ -231,17 +245,6 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - kafkaconnect:CreateConnector
-                  - kafkaconnect:CreateCustomPlugin
-                  - kafkaconnect:CreateWorkerConfiguration
-                  - kafkaconnect:DeleteConnector
-                  - kafkaconnect:DescribeConnector
-                  - kafkaconnect:DescribeCustomPlugin
-                  - kafkaconnect:DescribeWorkerConfiguration
-                  - kafkaconnect:ListConnectors
-                  - kafkaconnect:ListCustomPlugins
-                  - kafkaconnect:ListWorkerConfigurations
-                  - kafkaconnect:UpdateConnector
                   - ec2:CreateNetworkInterface
                   - ec2:DescribeNetworkInterfaces
                   - ec2:DescribeVpcs
@@ -261,35 +264,19 @@ Resources:
                   - logs:PutResourcePolicy
                   - logs:DescribeResourcePolicies
                   - logs:DescribeLogGroups
-                  - kafka:ListConfigurations
-                  - kafka:GetBootstrapBrokers
+                  - secretsmanager:GetSecretValue
+                  - ec2:AssignPrivateIpAddresses
+                  - ec2:UnassignPrivateIpAddresses
+                  - kinesisanalytics:DescribeApplication
+                  - kinesisanalytics:AddApplicationVpcConfiguration
+                  - kinesisanalytics:UpdateApplication
+                  - kinesisanalytics:StartApplication
                 Resource: "*"
               - Effect: Allow
                 Action:
                   - iam:AttachRolePolicy
                   - iam:PutRolePolicy
-                Resource: "arn:aws:iam::*:role/aws-service-role/kafkaconnect.amazonaws.com/AWSServiceRoleForKafkaConnect*"
-              - Effect: Allow
-                Action:
-                  - iam:PassRole
-                Resource: !GetAtt MSKConnectServiceRole.Arn
-              - Effect: Allow
-                Action:
-                  - kafka:CreateConfiguration
-                  - kafka:DeleteConfiguration
-                Resource: !Sub "arn:aws:kafka:${AWS::Region}:${AWS::AccountId}:*"
-              - Effect: Allow
-                Action:
-                  - kafka:UpdateClusterConfiguration
-                  - kafka:DescribeCluster
-                  - kafka:GetBootstrapBrokers
-                Resource: !Ref MSKCluster
-              - Effect: Allow
-                Action:
-                  - kinesisanalytics:UpdateApplication
-                  - kinesisanalytics:StartApplication
                   - kinesisanalytics:DescribeApplication
-                  - kinesisanalytics:AddApplicationVpcConfiguration
                 Resource: !Sub "arn:aws:kinesisanalytics:${AWS::Region}:${AWS::AccountId}:application/${AWS::StackName}-kda-app"
               - Effect: Allow
                 Action:
@@ -304,56 +291,6 @@ Resources:
                     'iam:AWSServiceName': kafkaconnect.amazonaws.com
 
 
-# MSK Connect Role
-  MSKConnectServiceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-          - Action:
-              - sts:AssumeRole
-            Effect: Allow
-            Principal:
-              Service:
-                - kafkaconnect.amazonaws.com
-        Version: '2012-10-17'
-      Path: "/"
-      Policies:
-        - PolicyName: root
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ec2:CreateNetworkInterface
-                  - ec2:DescribeSubnets
-                  - ec2:DescribeVpcs
-                  - ec2:DescribeSecurityGroups
-                  - logs:CreateLogDelivery
-                  - logs:GetLogDelivery
-                  - logs:DeleteLogDelivery
-                  - logs:ListLogDeliveries
-                  - logs:PutResourcePolicy
-                  - logs:DescribeResourcePolicies
-                  - logs:DescribeLogGroups
-                  - logs:PutLogEvents
-                  - logs:DescribeLogStreams
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:DeleteObject
-                  - s3:ListBucket
-                  - s3:GetObjectVersion
-                Resource:
-                  - !Sub "arn:aws:s3:::${BucketName}"
-                  - !Sub "arn:aws:s3:::${BucketName}/*"
-              - Effect: Allow
-                Action:
-                  - es:ESHttp*
-                Resource:
-                  - !GetAtt OpenSearchDomain.Arn
 
 # Event
   scheduledEvent:
@@ -402,15 +339,21 @@ Resources:
         Variables:
           InputKafkaTopic:
             Ref: KafkaInputTopic
-          mskClusterArn: !Ref MSKCluster
+          MSKClusterArn: 
+            Ref: MSKCluster
+          APIKey:
+            Ref: APIKey
+          APISecret:
+            Ref: APISecret
       Runtime: python3.6
       Timeout: 300
       VpcConfig:
         SecurityGroupIds:
           - !GetAtt BlogVPC.DefaultSecurityGroup
         SubnetIds:
-          - !Ref privateSubnet1
-          - !Ref privateSubnet2
+           - !Ref privateSubnet1
+           - !Ref privateSubnet2
+          # - !Ref publicSubnet1
 
 
 #Consumer Lambda
@@ -434,6 +377,12 @@ Resources:
           SNSTopicArn: !Ref fdSNSTopic
       Runtime: python3.6
       Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt BlogVPC.DefaultSecurityGroup
+        SubnetIds:
+           - !Ref privateSubnet1
+           - !Ref privateSubnet2
 
 #SNS Topic
   fdSNSTopic:
@@ -452,44 +401,20 @@ Resources:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
       Enabled: false
-      EventSourceArn: !Ref MSKCluster
       FunctionName:
         Fn::GetAtt:
           - fdLambdaConsumer
           - Arn
+      SelfManagedEventSource: 
+        Endpoints:
+          KafkaBootstrapServers: 
+            - Ref: MSKCluster
+      SourceAccessConfigurations:
+        - Type: "BASIC_AUTH" 
+          URI: !Ref LambdaSecret
       StartingPosition: TRIM_HORIZON
       Topics:
         - Ref: KafkaOutputTopic
-
-
-# MSK Cluster
-
-
-  MSKLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "${AWS::StackName}-msk"
-      
-  MSKCluster:
-    Type: AWS::MSK::Cluster
-    Properties:
-      ClusterName: !Sub "${AWS::StackName}-msk"
-      KafkaVersion: 2.2.1
-      NumberOfBrokerNodes: 2
-      LoggingInfo:
-        BrokerLogs: 
-          CloudWatchLogs:
-            Enabled: true
-            LogGroup: !Ref  MSKLogGroup
-      EncryptionInfo:
-        EncryptionInTransit:
-          ClientBroker: "TLS"
-      BrokerNodeGroupInfo:
-        InstanceType: kafka.m5.large
-        ClientSubnets:
-          - !Ref privateSubnet1
-          - !Ref privateSubnet2
-
 
 # KDA Resources
   KDAFlinkLogGroup:
@@ -603,7 +528,9 @@ Resources:
                 input.topic.name:
                   Ref: KafkaInputTopic
                 aws.region: !Sub "${AWS::Region}"
-                bootstrap.servers: "CHANGE THIS MSK ENDPOINT"
+                bootstrap.servers: !Ref MSKCluster
+                api.key: !Ref APIKey
+                api.password: !Ref APISecret
                 frauddetector.name:
                   Ref: FraudDetectorName
                 frauddetector.event.name: !Ref FraudDetectorEventName
@@ -677,14 +604,14 @@ Resources:
         DomainName: !Sub "${AWS::StackName}-os"
         EngineVersion: 'OpenSearch_1.0'
         ClusterConfig: 
-          DedicatedMasterCount: 3
-          DedicatedMasterEnabled: true
-          DedicatedMasterType: m5.large.search
-          InstanceCount: 2
+          # DedicatedMasterCount: 2
+          # DedicatedMasterEnabled: true
+          # DedicatedMasterType: m5.large.search
+          InstanceCount: 1
           InstanceType: m5.large.search
-          ZoneAwarenessEnabled: true
-          ZoneAwarenessConfig: 
-            AvailabilityZoneCount: 2
+          # ZoneAwarenessEnabled: true
+          # ZoneAwarenessConfig: 
+          #   AvailabilityZoneCount: 2
           WarmEnabled: false
         AccessPolicies:
           Version: '2012-10-17'
@@ -720,12 +647,13 @@ Resources:
               Ref: OpenSearchMasterUsername
             MasterUserPassword:
               Ref: OpenSearchMasterPassword
-        VPCOptions:
-          SecurityGroupIds:
-            - !GetAtt BlogVPC.DefaultSecurityGroup
-          SubnetIds:
-            - !Ref privateSubnet1
-            - !Ref privateSubnet2
+        # VPCOptions:
+        #   SecurityGroupIds:
+        #     - !GetAtt BlogVPC.DefaultSecurityGroup
+        #   SubnetIds:
+        #      - !Ref publicSubnet1
+        #     # - !Ref privateSubnet1
+        #     # - !Ref privateSubnet2
         LogPublishingOptions:
           ES_APPLICATION_LOGS:
               CloudWatchLogsLogGroupArn: !GetAtt OpenSearchApplicationLogGroup.Arn
@@ -758,12 +686,6 @@ Resources:
       PolicyName: !Sub "${AWS::StackName}ApplicationResourcePolicy"
       PolicyDocument: !Sub '{ "Version": "2012-10-17", "Statement": [ { "Sid": "OpenSearchLogsToCloudWatchLogs", "Effect": "Allow", "Principal": { "Service": [ "es.amazonaws.com" ] }, "Action":["logs:PutLogEvents", "logs:CreateLogStream"], "Resource": "*"} ] }'
 
-  
-  MSKConnectLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "${AWS::StackName}-mskconnect"
-
 ### Post Deployment Configuration
 
 #Config Lambda
@@ -784,11 +706,12 @@ Resources:
           - Arn
       Environment:
         Variables:
-          kdaName: !Sub "${AWS::StackName}-kda-app"
           mskClusterArn: !Ref MSKCluster
+          kdaName: !Sub "${AWS::StackName}-kda-app"
           vpcID: !Ref BlogVPC
           subnet1: !Ref privateSubnet1
           subnet2: !Ref privateSubnet2
+          subnet3: !Ref publicSubnet1
           sgID: !GetAtt BlogVPC.DefaultSecurityGroup
           stackname: !Sub "${AWS::StackName}"
           opensearchUsername:
@@ -802,9 +725,6 @@ Resources:
           awsRegion: !Sub "${AWS::Region}"
           s3bucketName:
             Ref: BucketName
-          s3connectorkey:
-            Ref: S3connectorPath
-          mskconnectRole: !GetAtt MSKConnectServiceRole.Arn
           logGroupName: !Sub "${AWS::StackName}-mskconnect"
       Runtime: python3.6
       Timeout: 300
@@ -828,6 +748,9 @@ Resources:
 
 
 Outputs:
+  OpenSearchEndpoint:
+    Description: Opensearch Endpoint
+    Value: !Sub ${OpenSearchDomain.DomainEndpoint}
   OpenSearchDashboardLink:
     Description: Opensearch Dashboard Link
     Value: !Sub "https://${OpenSearchDomain.DomainEndpoint}/_dashboards"

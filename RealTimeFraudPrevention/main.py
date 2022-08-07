@@ -102,7 +102,7 @@ table_env.register_function(get_fraud_name, get_fraud)
 
 # Input transactions topic
 
-def create_table_input(table_name, stream_name, broker):
+def create_table_input(table_name, stream_name, broker, api_username, api_password):
     return """ CREATE TABLE {0} (
                 `transaction_amt` BIGINT NOT NULL,
                 `email_address` VARCHAR(64) NOT NULL,
@@ -132,12 +132,14 @@ def create_table_input(table_name, stream_name, broker):
                 'format' = 'json',
                 'json.timestamp-format.standard' = 'ISO-8601',
                 'scan.startup.mode' = 'latest-offset',
-                'properties.security.protocol' = 'SSL'
-              ) """.format(table_name, stream_name, broker)
+                'properties.security.protocol' = 'SASL_PLAINTEXT',
+                'properties.sasl.mechanism' = 'PLAIN',
+                'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="{3}" password="{4}";',
+            ) """.format(table_name, stream_name, broker, api_username, api_password)
 
 # Input outcome topic
 
-def create_table_output_kafka(table_name, stream_name, broker):
+def create_table_output_kafka(table_name, stream_name, broker, api_username, api_password):
     return """ CREATE TABLE {0} (
                 `transaction_amt` BIGINT NOT NULL,
                 `email_address` VARCHAR(64) NOT NULL,
@@ -167,8 +169,10 @@ def create_table_output_kafka(table_name, stream_name, broker):
                 'properties.group.id' = 'testGroupTFI',
                 'format' = 'json',
                 'json.timestamp-format.standard' = 'ISO-8601',
-                'properties.security.protocol' = 'SSL'
-            ) """.format(table_name, stream_name, broker)
+                'properties.security.protocol' = 'SASL_PLAINTEXT',
+                'properties.sasl.mechanism' = 'PLAIN',
+                'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="{3}" password="{4}";',
+            ) """.format(table_name, stream_name, broker, api_username, api_password)
 
 
 
@@ -229,6 +233,9 @@ def main():
     AWS_REGION_KEY = "aws.region"
 
     BROKER_KEY = "bootstrap.servers"
+
+    API_USER = 'api.key'
+    API_PASSWORD = 'api.secret'
     
 
     props = app_properties()
@@ -243,7 +250,8 @@ def main():
     aws_region = input_property_map[AWS_REGION_KEY]
     fraud_detector_event_name = input_property_map[FRAUD_DETECTOR_EVENT_NAME_KEY]
     fraud_detector_entity_type = input_property_map[FRAUD_DETECTOR_ENTITY_TYPE_KEY]
-
+    api_username = input_property_map[API_USER]
+    api_password = input_property_map[API_PASSWORD]
     output_stream_msk = output_property_map[OUTPUT_TOPIC_KEY]
 
 
@@ -252,8 +260,8 @@ def main():
     output_table_msk = "output_table_msk"
 
 # Create input and output table
-    table_env.execute_sql(create_table_input(input_table, input_stream, broker))
-    table_env.execute_sql(create_table_output_kafka(output_table_msk, output_stream_msk, broker))
+    table_env.execute_sql(create_table_input(input_table, input_stream, broker, api_username, api_password))
+    table_env.execute_sql(create_table_output_kafka(output_table_msk, output_stream_msk, broker, api_username, api_password))
 
 # Compute temp view with Fraud results
     fraud_table = compute_fraud_table(input_table,fraud_detector_name, aws_region, fraud_detector_event_name, fraud_detector_entity_type)

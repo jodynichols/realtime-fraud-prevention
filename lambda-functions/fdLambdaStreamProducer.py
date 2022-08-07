@@ -21,12 +21,15 @@ msk = boto3.client("kafka")
 def lambda_handler(event, context):
     # Get bootstrap servers and Input Kafka topic
     Input_kafka_topic = os.environ["InputKafkaTopic"]
-    cluster_arn = os.environ["mskClusterArn"]
-    response = msk.get_bootstrap_brokers(ClusterArn=cluster_arn)
-
+    # cluster_arn = os.environ["mskClusterArn"]
+    # response = msk.get_bootstrap_brokers(ClusterArn=cluster_arn)
+    Bootstrap_url = os.environ["MSKClusterArn"]
     # Initialize the producer
-    producer = KafkaProducer(security_protocol="SSL",
-                             bootstrap_servers=response["BootstrapBrokerStringTls"],
+    producer = KafkaProducer(security_protocol="SASL_SSL",
+                             sasl_mechanism="PLAIN",
+                             sasl_plain_username=os.environ["APIKey"],
+                             sasl_plain_password=os.environ["APISecret"],
+                             bootstrap_servers=Bootstrap_url,
                              value_serializer=lambda x: json.dumps(x).encode("utf-8"),
                              retry_backoff_ms=500,
                              request_timeout_ms=20000)
