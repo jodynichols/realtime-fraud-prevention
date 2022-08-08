@@ -495,7 +495,7 @@ Resources:
   KDAFlinkApplication:
     Type: AWS::KinesisAnalyticsV2::Application
     Properties:
-      RuntimeEnvironment: FLINK-1_11
+      RuntimeEnvironment: FLINK-1_13
       ServiceExecutionRole: !GetAtt KinesisAnalyticsRole.Arn
       ApplicationName: !Sub "${AWS::StackName}-kda-app"
       ApplicationConfiguration:
@@ -521,8 +521,8 @@ Resources:
           PropertyGroups:
             - PropertyGroupId: kinesis.analytics.flink.run.options
               PropertyMap:
-                python: "RealTimeFraudPrevention/main.py"
-                jarfile: "RealTimeFraudPrevention/lib/flink-sql-connector-kafka_2.11-1.11.2.jar"
+                python: "RealTimeFraudPrevention/mainv2.py"
+                jarfile: "RealTimeFraudPrevention/lib/flink-sql-connector-kafka_2.11-1.13.6.jar"
             - PropertyGroupId: producer.config.0
               PropertyMap:
                 input.topic.name:
